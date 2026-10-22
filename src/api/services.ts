@@ -73,14 +73,14 @@ export const getPayments = () => request<PaymentRecord[]>('/api/payments')
 export const getActivePartners = () =>
   request<PartnerOption[]>('/api/payments/partners')
 export const createPayments = (payload: PaymentsPayload) =>
-  request<void>('/api/payments', { method: 'POST', body: payload })
+  request<{ paymentIds: number[] }>('/api/payments', { method: 'POST', body: payload })
 
 // ---------- Préstamos ----------
 export const getLoans = () => request<LoanRecord[]>('/api/loans')
 export const createLoan = (payload: LoanFormPayload) =>
-  request<void>('/api/loans', { method: 'POST', body: payload })
+  request<{ id: number }>('/api/loans', { method: 'POST', body: payload })
 export const payLoan = (loanId: number, payload: LoanPaymentPayload) =>
-  request<void>(`/api/loans/${loanId}/pay`, { method: 'POST', body: payload })
+  request<{ paymentIds: number[] }>(`/api/loans/${loanId}/pay`, { method: 'POST', body: payload })
 
 // ---------- Egresos ----------
 export const getEgresses = () => request<EgressRecord[]>('/api/egresses')

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { FlatList, RefreshControl, StyleSheet, Switch, Text, View } from 'react-native'
+import { Alert, FlatList, RefreshControl, StyleSheet, Switch, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ApiError } from '@/api/client'
@@ -27,6 +27,7 @@ import {
 import { useFetch } from '@/hooks/useFetch'
 import { colors } from '@/theme'
 import { formatCurrency, formatDate, isValidDate, parseTickets, todayISO } from '@/utils/format'
+import { generateAndShareReceipt } from '@/utils/receipt'
 
 const CONCEPTS = ['Abono Ahorro', 'Pago Boleta', 'Pago Cuota Préstamo', 'Multa', 'Otro Aporte']
 const TICKET_PRICE = 30000
@@ -164,7 +165,7 @@ export default function PagosScreen() {
 
     setIsSaving(true)
     try {
-      await createPayments({
+      const { paymentIds } = await createPayments({
         partnerId,
         registeredBy: user.id,
         items: rows.map((r) => ({
@@ -178,8 +179,37 @@ export default function PagosScreen() {
           fineAmount: r.hasFine ? Number(r.fineAmount || 0) : 0,
         })),
       })
+      const partner = selectedPartner
       setShowModal(false)
       await reloadPayments()
+      try {
+        if (paymentIds.length !== rows.length) {
+          throw new Error('El servidor no devolvió el identificador de cada pago.')
+        }
+        if (!partner) throw new Error('No se encontró el socio asociado al pago.')
+
+        await generateAndShareReceipt(
+          `Abono_${partner.fullName}_${paymentIds.join('_')}`,
+          rows.map((row, index) => ({
+            title: 'Comprobante de pago',
+            invoiceId: paymentIds[index],
+            partnerName: partner.fullName,
+            date: formatDate(row.paymentDate),
+            rows: [
+              { label: 'Concepto', value: row.ticketNumber ? `${row.concept} (#${row.ticketNumber})` : row.concept },
+              { label: 'Medio de pago', value: row.paymentMethod },
+              { label: 'Monto', value: formatCurrency(row.amount) },
+              ...(row.hasFine ? [{ label: 'Multa', value: formatCurrency(row.fineAmount) }] : []),
+              { label: 'Total', value: formatCurrency(row.amount + (row.hasFine ? row.fineAmount : 0)) },
+            ],
+          })),
+        )
+      } catch (receiptError) {
+        Alert.alert(
+          'Pago registrado',
+          receiptError instanceof Error ? `No se pudo generar o compartir el PDF: ${receiptError.message}` : 'No se pudo generar o compartir el PDF.',
+        )
+      }
     } catch (err) {
       setModalError(err instanceof ApiError ? err.message : 'Error al guardar los abonos.')
     } finally {
@@ -202,7 +232,7 @@ export default function PagosScreen() {
           p.registeredByName.toLowerCase().includes(q),
       )
     }
-    return list
+    return [...list].sort((a, b) => Number(b.id) - Number(a.id))
   }, [payments, methodFilter, search])
 
   const totalRecaudado = filtered.reduce((acc, p) => acc + Number(p.totalPaid), 0)
@@ -285,6 +315,36 @@ export default function PagosScreen() {
             />
             <Text style={[s.muted, { marginTop: 4 }]}>Registró: {p.registeredByName}</Text>
             {p.observations ? <Text style={[s.muted, { marginTop: 2 }]}>Obs.: {p.observations}</Text> : null}
+            <Button
+              title="Compartir comprobante PDF"
+              variant="outline"
+              small
+              onPress={() => {
+                void generateAndShareReceipt(`Abono_${p.partnerName}_${p.id}`, [
+                  {
+                    title: 'Comprobante de ingreso',
+                    invoiceId: p.id,
+                    partnerName: p.partnerName,
+                    date: formatDate(p.paymentDate),
+                    rows: [
+                      { label: 'Documento', value: p.partnerDocument },
+                      { label: 'Concepto', value: p.ticketNumber ? `${p.concept} (#${p.ticketNumber})` : p.concept },
+                      { label: 'Medio de pago', value: p.paymentMethod },
+                      { label: 'Monto', value: formatCurrency(p.amount) },
+                      ...(Number(p.fineAmount) > 0 ? [{ label: 'Multa', value: formatCurrency(p.fineAmount) }] : []),
+                      { label: 'Total pagado', value: formatCurrency(p.totalPaid) },
+                      { label: 'Registró', value: p.registeredByName },
+                    ],
+                  },
+                ]).catch((receiptError: unknown) => {
+                  Alert.alert(
+                    'No se pudo compartir el comprobante',
+                    receiptError instanceof Error ? receiptError.message : 'Ocurrió un error al generar el PDF.',
+                  )
+                })
+              }}
+              style={{ marginTop: 10, alignSelf: 'flex-start' }}
+            />
           </Card>
         )}
       />

@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router'
 import { useCallback, useMemo, useState } from 'react'
+import { Fragment } from 'react'
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -70,44 +71,44 @@ export default function RaffleScreen() {
           {visible.map((item) => {
             const active = selected?.number === item.number
             return (
-              <Pressable
-                key={item.number}
-                onPress={() => setSelected(item)}
-                style={[
-                  s.cell,
-                  item.isAssigned ? s.cellAssigned : s.cellFree,
-                  active && { borderColor: colors.primary, borderWidth: 2 },
-                ]}
-              >
-                <Text style={[s.cellText, { color: item.isAssigned ? '#fff' : colors.textSoft }]}>
-                  {item.number}
-                </Text>
-              </Pressable>
+              <Fragment key={item.number}>
+                <Pressable
+                  onPress={() => setSelected(item)}
+                  style={[
+                    s.cell,
+                    item.isAssigned ? s.cellAssigned : s.cellFree,
+                    active && { borderColor: colors.primary, borderWidth: 2 },
+                  ]}
+                >
+                  <Text style={[s.cellText, { color: item.isAssigned ? '#fff' : colors.textSoft }]}>
+                    {item.number}
+                  </Text>
+                </Pressable>
+                {active ? (
+                  <Card style={s.selectedCard}>
+                    <Text style={s.selTitle}>Número {selected.number}</Text>
+                    {selected.isAssigned && selected.partner ? (
+                      <View style={{ marginTop: 2 }}>
+                        <InfoRow label="Socio" value={selected.partner.fullName} />
+                        <InfoRow label="Documento" value={String(selected.partner.documentId)} />
+                        <InfoRow label="Celular" value={String(selected.partner.cellphone)} />
+                        <Pressable
+                          onPress={() => Linking.openURL(`tel:${selected.partner?.cellphone}`)}
+                          style={s.callBtn}
+                        >
+                          <Text style={s.callText}>📞 Llamar</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Text style={{ color: colors.secondary, fontWeight: '600', marginTop: 2 }}>Disponible</Text>
+                    )}
+                  </Card>
+                ) : null}
+              </Fragment>
             )
           })}
         </View>
       )}
-
-      {selected ? (
-        <Card style={{ marginTop: 16 }}>
-          <Text style={s.selTitle}>Número {selected.number}</Text>
-          {selected.isAssigned && selected.partner ? (
-            <View style={{ marginTop: 6 }}>
-              <InfoRow label="Socio" value={selected.partner.fullName} />
-              <InfoRow label="Documento" value={String(selected.partner.documentId)} />
-              <InfoRow label="Celular" value={String(selected.partner.cellphone)} />
-              <Pressable
-                onPress={() => Linking.openURL(`tel:${selected.partner?.cellphone}`)}
-                style={s.callBtn}
-              >
-                <Text style={s.callText}>📞 Llamar</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Text style={{ color: colors.secondary, fontWeight: '600', marginTop: 6 }}>Disponible</Text>
-          )}
-        </Card>
-      ) : null}
     </ScrollView>
   )
 }
@@ -125,6 +126,7 @@ const s = StyleSheet.create({
   cellAssigned: { backgroundColor: colors.secondary, borderColor: colors.secondary },
   cellFree: { backgroundColor: '#fff', borderColor: colors.border },
   cellText: { fontWeight: '800', fontSize: 15 },
+  selectedCard: { width: '100%', marginTop: 2, marginBottom: 4, padding: 10 },
   selTitle: { fontSize: 18, fontWeight: '800', color: colors.primary },
   callBtn: {
     marginTop: 10,

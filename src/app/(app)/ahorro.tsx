@@ -46,7 +46,7 @@ export default function AhorroScreen() {
           p.coordinatorName.toLowerCase().includes(q),
       )
     }
-    return list
+    return [...list].sort((a, b) => Number(b.id) - Number(a.id))
   }, [partners, filter, search])
 
   const totalAlDia = partners.filter(isOk).length
