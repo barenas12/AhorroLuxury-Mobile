@@ -19,7 +19,8 @@ const TIMEOUT_MS = 15000
 
 /**
  * Llama al backend. Todas las respuestas del API tienen la forma
- * { success: boolean, data?: T, message?: string }.
+ * { success: boolean, data?: T, message?: string }. Algunas operaciones de
+ * creación también devuelven sus identificadores directamente en la respuesta.
  * Lanza ApiError con el mensaje del servidor cuando success = false.
  */
 export async function request<T = unknown>(
@@ -48,7 +49,7 @@ export async function request<T = unknown>(
       throw new ApiError(json?.message || `Error del servidor (${res.status}).`, res.status)
     }
 
-    return json.data as T
+    return (json.data ?? json) as T
   } catch (err) {
     if (err instanceof ApiError) throw err
     if (err instanceof Error && err.name === 'AbortError') {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ApiError } from '@/api/client'
@@ -27,6 +27,7 @@ import {
 import { useFetch } from '@/hooks/useFetch'
 import { colors } from '@/theme'
 import { addDays, formatCurrency, formatDate, isValidDate, todayISO } from '@/utils/format'
+import { generateAndShareReceipt } from '@/utils/receipt'
 
 type StatusFilter = 'Activo' | 'Pagado' | 'Todos'
 
@@ -93,7 +94,7 @@ export default function PrestamosScreen() {
         (l) => l.partnerName.toLowerCase().includes(q) || String(l.documentId).includes(q),
       )
     }
-    return list
+    return [...list].sort((a, b) => Number(b.id) - Number(a.id))
   }, [loans, statusFilter, search])
 
   const totalPrestado = loans.reduce((acc, l) => acc + Number(l.initialCapital), 0)
@@ -148,7 +149,7 @@ export default function PrestamosScreen() {
       })
 
       // 2. Si hubo fondos, se crea el contrato del préstamo
-      await createLoan({
+      const { id: loanId } = await createLoan({
         partnerId: form.partnerId,
         initialCapital: form.initialCapital,
         interestRate: Number(form.interestRate) || 0,
@@ -164,6 +165,31 @@ export default function PrestamosScreen() {
 
       setShowCreate(false)
       await reload()
+      try {
+        if (!Number.isInteger(loanId) || loanId <= 0) throw new Error('El servidor no devolvió el ID del préstamo.')
+        if (!partner) throw new Error('No se encontró el socio asociado al préstamo.')
+        await generateAndShareReceipt(`Prestamo_${partner.fullName}_${loanId}`, [
+          {
+            title: 'Comprobante de préstamo',
+            invoiceId: loanId,
+            partnerName: partner.fullName,
+            date: formatDate(form.deliveryDate),
+            rows: [
+              { label: 'Capital prestado', value: formatCurrency(form.initialCapital) },
+              { label: 'Tasa de interés', value: `${Number(form.interestRate) || 0}%` },
+              { label: 'Medio de entrega', value: form.deliveryMethod },
+              { label: 'Garantía', value: form.guarantee },
+              { label: 'Fecha de vencimiento', value: formatDate(dueDate) },
+              { label: 'Plazo', value: `${Number(form.termDays)} días` },
+            ],
+          },
+        ])
+      } catch (receiptError) {
+        Alert.alert(
+          'Préstamo registrado',
+          receiptError instanceof Error ? `No se pudo generar o compartir el PDF: ${receiptError.message}` : 'No se pudo generar o compartir el PDF.',
+        )
+      }
     } catch (err) {
       setModalError(err instanceof ApiError ? err.message : 'Error al registrar el préstamo.')
     } finally {
@@ -220,9 +246,43 @@ export default function PrestamosScreen() {
 
     setIsSaving(true)
     try {
-      await payLoan(selectedLoan.id, { ...pay, registeredBy: user.id })
+      const { paymentIds } = await payLoan(selectedLoan.id, { ...pay, registeredBy: user.id })
+      const payments = [
+        { amount: pay.capitalEfectivo, concept: 'Abono a capital', method: 'Efectivo' },
+        { amount: pay.capitalTransferencia, concept: 'Abono a capital', method: 'Transferencia' },
+        { amount: pay.interesEfectivo, concept: 'Abono a intereses', method: 'Efectivo' },
+        { amount: pay.interesTransferencia, concept: 'Abono a intereses', method: 'Transferencia' },
+      ].filter((payment) => payment.amount > 0)
+
       setShowPay(false)
       await reload()
+      try {
+        if (paymentIds.length !== payments.length) {
+          throw new Error('El servidor no devolvió el identificador de cada abono.')
+        }
+        await generateAndShareReceipt(
+          `Abono_${selectedLoan.partnerName}_${paymentIds.join('_')}`,
+          payments.map((payment, index) => ({
+            title: 'Comprobante de abono',
+            invoiceId: paymentIds[index],
+            partnerName: selectedLoan.partnerName,
+            date: formatDate(pay.paymentDate),
+            rows: [
+              { label: 'Movimiento', value: payment.concept },
+              { label: 'Medio de pago', value: payment.method },
+              { label: 'Valor del movimiento', value: formatCurrency(payment.amount) },
+              { label: 'Abono a capital', value: formatCurrency(abonoCapital) },
+              { label: 'Abono a intereses', value: formatCurrency(abonoInteres) },
+              { label: 'Total abonos', value: formatCurrency(abonoTotal) },
+            ],
+          })),
+        )
+      } catch (receiptError) {
+        Alert.alert(
+          'Abono registrado',
+          receiptError instanceof Error ? `No se pudo generar o compartir el PDF: ${receiptError.message}` : 'No se pudo generar o compartir el PDF.',
+        )
+      }
     } catch (err) {
       setModalError(err instanceof ApiError ? err.message : 'Error al registrar el abono.')
     } finally {
@@ -294,6 +354,39 @@ export default function PrestamosScreen() {
               <InfoRow label="Garantía" value={l.guarantee} />
               {l.observations ? <Text style={[s.muted, { marginTop: 4 }]}>Obs.: {l.observations}</Text> : null}
               <Text style={[s.muted, { marginTop: 2 }]}>Registró: {l.registeredByName}</Text>
+              <Button
+                title="Compartir comprobante PDF"
+                variant="outline"
+                small
+                onPress={() => {
+                  void generateAndShareReceipt(`Prestamo_${l.partnerName}_${l.id}`, [
+                    {
+                      title: 'Comprobante de préstamo',
+                      invoiceId: l.id,
+                      partnerName: l.partnerName,
+                      date: formatDate(l.deliveryDate),
+                      rows: [
+                        { label: 'Documento', value: l.documentId },
+                        { label: 'Capital prestado', value: formatCurrency(l.initialCapital) },
+                        { label: 'Tasa de interés', value: `${l.interestRate}%` },
+                        { label: 'Capital abonado', value: formatCurrency(l.paidCapital) },
+                        { label: 'Intereses abonados', value: formatCurrency(l.paidInterest) },
+                        { label: 'Capital pendiente', value: formatCurrency(pending) },
+                        { label: 'Medio de entrega', value: l.deliveryMethod },
+                        { label: 'Fecha de vencimiento', value: formatDate(l.dueDate) },
+                        { label: 'Garantía', value: l.guarantee },
+                        { label: 'Registró', value: l.registeredByName },
+                      ],
+                    },
+                  ]).catch((receiptError: unknown) => {
+                    Alert.alert(
+                      'No se pudo compartir el comprobante',
+                      receiptError instanceof Error ? receiptError.message : 'Ocurrió un error al generar el PDF.',
+                    )
+                  })
+                }}
+                style={{ marginTop: 10, alignSelf: 'flex-start' }}
+              />
 
               {canPay ? (
                 <Button title="Registrar abono" small onPress={() => openPay(l)} style={{ marginTop: 12 }} />
