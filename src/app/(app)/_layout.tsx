@@ -4,10 +4,12 @@ import { View } from 'react-native'
 import { useAuth } from '@/auth/AuthContext'
 import BottomNavigation from '@/components/BottomNavigation'
 import SignOutButton from '@/components/SignOutButton'
+import { useMovementNotifications } from '@/hooks/useMovementNotifications'
 import { colors } from '@/theme'
 
 export default function AppLayout() {
   const { user } = useAuth()
+  useMovementNotifications(user)
   // Igual que la web: el perfil 3 (socio) no accede a los módulos de gestión
   const canManage = Number(user?.profile) !== 3
 

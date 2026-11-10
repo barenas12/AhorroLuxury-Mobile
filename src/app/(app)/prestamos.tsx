@@ -27,6 +27,7 @@ import {
 import { useFetch } from '@/hooks/useFetch'
 import { colors } from '@/theme'
 import { addDays, formatCurrency, formatDate, isValidDate, todayISO } from '@/utils/format'
+import { notifyLoanAbonoRegistered, notifyLoanCreated } from '@/utils/notifications'
 import { generateAndShareReceipt } from '@/utils/receipt'
 
 type StatusFilter = 'Activo' | 'Pagado' | 'Todos'
@@ -164,6 +165,12 @@ export default function PrestamosScreen() {
       })
 
       setShowCreate(false)
+      void notifyLoanCreated({
+        loanId,
+        partnerName: partner?.fullName ?? 'Socio',
+        amount: form.initialCapital,
+        termDays: Number(form.termDays) || DEFAULT_TERM,
+      })
       await reload()
       try {
         if (!Number.isInteger(loanId) || loanId <= 0) throw new Error('El servidor no devolvió el ID del préstamo.')
@@ -255,6 +262,14 @@ export default function PrestamosScreen() {
       ].filter((payment) => payment.amount > 0)
 
       setShowPay(false)
+      void notifyLoanAbonoRegistered({
+        loanId: selectedLoan.id,
+        paymentIds,
+        partnerName: selectedLoan.partnerName,
+        abonoTotal,
+        abonoCapital,
+        abonoInteres,
+      })
       await reload()
       try {
         if (paymentIds.length !== payments.length) {

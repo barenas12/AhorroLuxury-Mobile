@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ahorroluxury.mobile"
+      "bundleIdentifier": "com.ahorroluxury.mobile",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Permite desbloquear Ahorro Luxury usando reconocimiento facial o Touch ID."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +21,14 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ahorroluxury.mobile"
+      "package": "com.ahorroluxury.mobile",
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,7 +38,26 @@
       "expo-router",
       "expo-status-bar",
       "expo-font",
-      "expo-sharing"
-    ]
+      "expo-sharing",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permite desbloquear Ahorro Luxury con Face ID o reconocimiento facial."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1F7A63"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6aaa6b72-53cd-4c5a-8be7-ca15029d7e9d"
+      }
+    }
   }
 }

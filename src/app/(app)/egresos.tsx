@@ -26,6 +26,7 @@ import {
 import { useFetch } from '@/hooks/useFetch'
 import { colors } from '@/theme'
 import { formatCurrency, formatDate, isValidDate, todayISO } from '@/utils/format'
+import { notifyEgressRegistered } from '@/utils/notifications'
 
 const CONCEPTS = ['Préstamo Entregado', 'Pago Premio', 'Descapitalización', 'Otros']
 const EMPTY_EGRESSES: EgressRecord[] = []
@@ -93,6 +94,11 @@ export default function EgresosScreen() {
     try {
       await createEgress({ ...form, recipient: form.recipient.trim(), registeredBy: user.id })
       setShowModal(false)
+      void notifyEgressRegistered({
+        concept: form.concept,
+        recipient: form.recipient.trim(),
+        amount: form.amount,
+      })
       await reload()
     } catch (err) {
       // Aquí aparece el mensaje de "Fondos insuficientes" del backend

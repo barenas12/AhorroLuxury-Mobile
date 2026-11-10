@@ -27,6 +27,7 @@ import {
 import { useFetch } from '@/hooks/useFetch'
 import { colors } from '@/theme'
 import { formatCurrency, formatDate, isValidDate, parseTickets, todayISO } from '@/utils/format'
+import { notifyPaymentRegistered } from '@/utils/notifications'
 import { generateAndShareReceipt } from '@/utils/receipt'
 
 const CONCEPTS = ['Abono Ahorro', 'Pago Boleta', 'Pago Cuota Préstamo', 'Multa', 'Otro Aporte']
@@ -181,6 +182,12 @@ export default function PagosScreen() {
       })
       const partner = selectedPartner
       setShowModal(false)
+      void notifyPaymentRegistered({
+        paymentIds,
+        partnerName: partner?.fullName ?? 'Socio',
+        concepts: rows.map((r) => (r.ticketNumber ? `${r.concept} (#${r.ticketNumber})` : r.concept)),
+        totalAmount: subtotal + totalFines,
+      })
       await reloadPayments()
       try {
         if (paymentIds.length !== rows.length) {

@@ -1,4 +1,5 @@
-import { ComponentRef, useRef, useState } from 'react'
+import { Ionicons } from '@expo/vector-icons'
+import { ComponentRef, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Image,
   KeyboardAvoidingView,
@@ -18,6 +19,13 @@ import { useAuth } from '@/auth/AuthContext'
 import { Button, ErrorBox } from '@/components/ui'
 import { API_URL } from '@/config'
 import { colors, radius, shadow } from '@/theme'
+import {
+  authenticateWithBiometrics,
+  type BiometricSavedCredentials,
+  type BiometricSupport,
+  getBiometricSupport,
+  getSavedBiometricCredentials,
+} from '@/utils/biometrics'
 
 export default function LoginScreen() {
   const { signIn, notice, clearNotice } = useAuth()
@@ -27,8 +35,81 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [biometricLoading, setBiometricLoading] = useState(false)
   const [error, setError] = useState('')
   const passRef = useRef<ComponentRef<typeof TextInput>>(null)
+
+  const [bioSupport, setBioSupport] = useState<BiometricSupport>({
+    isAvailable: false,
+    biometricType: 'none',
+    label: 'Biometría',
+    iconName: 'lock-closed-outline',
+  })
+  const [savedBio, setSavedBio] = useState<BiometricSavedCredentials | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const [support, saved] = await Promise.all([
+        getBiometricSupport(),
+        getSavedBiometricCredentials(),
+      ])
+      if (cancelled) return
+      setBioSupport(support)
+      setSavedBio(saved)
+      if (saved?.username) {
+        setUser((prev) => prev || saved.username)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleBiometricLogin = useCallback(async () => {
+    if (!bioSupport.isAvailable) {
+      setError('Tu dispositivo no tiene huella o reconocimiento facial configurado.')
+      return
+    }
+    if (!savedBio) {
+      setError(
+        `Inicia sesión una vez con tu usuario y contraseña para activar el desbloqueo con ${bioSupport.label.toLowerCase()}.`,
+      )
+      return
+    }
+
+    setBiometricLoading(true)
+    setError('')
+    clearNotice()
+
+    try {
+      const ok = await authenticateWithBiometrics(`Ingresar con ${bioSupport.label}`)
+      if (!ok) return
+
+      if (savedBio.password) {
+        try {
+          const freshSession = await login(savedBio.username, savedBio.password)
+          await signIn(freshSession, savedBio.password)
+          return
+        } catch (err) {
+          // Si falló por cambio de clave en servidor, pedimos contraseña manual
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            setError('Tus credenciales cambiaron. Ingresa con tu nueva contraseña.')
+            return
+          }
+        }
+      }
+
+      // Respaldo con la sesión verificada localmente
+      await signIn(savedBio.session, savedBio.password)
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'No fue posible iniciar sesión con biometría.',
+      )
+    } finally {
+      setBiometricLoading(false)
+    }
+  }, [bioSupport, savedBio, clearNotice, signIn])
 
   const handleSubmit = async () => {
     if (!user.trim()) {
@@ -46,7 +127,7 @@ export default function LoginScreen() {
 
     try {
       const session = await login(user.trim(), password)
-      await signIn(session)
+      await signIn(session, password)
       // La navegación a la app la hace <Stack.Protected> al cambiar la sesión
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Error al iniciar sesión')
@@ -127,6 +208,31 @@ export default function LoginScreen() {
             loading={loading}
             style={{ marginTop: 22 }}
           />
+
+          {bioSupport.isAvailable ? (
+            <Pressable
+              onPress={handleBiometricLogin}
+              disabled={biometricLoading || loading}
+              style={({ pressed }) => [
+                s.bioButton,
+                pressed && { opacity: 0.78 },
+                (biometricLoading || loading) && { opacity: 0.5 },
+              ]}
+            >
+              <View style={s.bioIconWrap}>
+                <Ionicons name={bioSupport.iconName} size={22} color={colors.secondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.bioTitle}>Desbloquear con {bioSupport.label}</Text>
+                <Text style={s.bioSubtitle} numberOfLines={1}>
+                  {savedBio
+                    ? `Ingreso rápido como ${savedBio.session.full_name || savedBio.username}`
+                    : 'Inicia sesión una vez para vincular tu huella o rostro'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
+            </Pressable>
+          ) : null}
         </View>
 
         {__DEV__ ? <Text style={s.devUrl}>API: {API_URL}</Text> : null}
@@ -181,5 +287,27 @@ const s = StyleSheet.create({
     marginBottom: 14,
   },
   noticeText: { color: colors.bgLight, fontWeight: '600', fontSize: 13 },
+  bioButton: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(31, 122, 99, 0.35)',
+    backgroundColor: colors.successBg,
+  },
+  bioIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bioTitle: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  bioSubtitle: { fontSize: 12, color: colors.textSoft, marginTop: 1 },
   devUrl: { marginTop: 16, fontSize: 11, color: colors.muted },
 })
